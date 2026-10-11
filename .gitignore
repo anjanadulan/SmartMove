@@ -6,6 +6,8 @@ pvt/
 **/pvt/**
 /docs/
 /lecture_notes/
+/presentation/
+/viva/
 web/docs/
 *.pdf
 *.docx
