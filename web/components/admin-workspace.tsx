@@ -489,88 +489,115 @@ function AdminTownField({
 function isFieldInvalid(fieldKey: string, errMsg: string): boolean {
   if (!errMsg) return false
   const m = errMsg.toLowerCase()
-  if (
-    fieldKey === "vehicleId" &&
-    (m.includes("vehicle") || m.includes("maintenance") || m.includes("workshop"))
-  )
-    return true
-  if (fieldKey === "driverId" && m.includes("driver")) return true
-  if (
-    fieldKey === "departure" &&
-    (m.includes("departure") ||
+
+  // 1. Vehicle conflicts (only if error is about vehicle/maintenance)
+  if (fieldKey === "vehicleId") {
+    return (
+      m.includes("vehicle") ||
+      m.includes("workshop") ||
+      m.includes("maintenance")
+    )
+  }
+
+  // 2. Driver conflicts (only if error is about driver)
+  if (fieldKey === "driverId") {
+    return m.includes("driver")
+  }
+
+  // 3. Timing errors (only if error is about invalid departure/arrival times)
+  if (fieldKey === "departure") {
+    return (
       m.includes("future") ||
-      m.includes("arrival time must be after") ||
-      m.includes("later than") ||
-      m.includes("between") ||
-      m.includes("overlapping") ||
-      m.includes("already assigned") ||
-      m.includes("workshop"))
-  )
-    return true
-  if (
-    fieldKey === "arrival" &&
-    (m.includes("arrival") ||
-      m.includes("departure") ||
-      m.includes("between") ||
-      m.includes("overlapping") ||
-      m.includes("already assigned") ||
-      m.includes("workshop"))
-  )
-    return true
-  if (
-    (fieldKey === "origin" || fieldKey === "destination") &&
-    (m.includes("origin") || m.includes("destination") || m.includes("same town"))
-  )
-    return true
-  if (fieldKey === "name" && (m.includes("route name") || m.includes("unique")))
-    return true
-  if (fieldKey === "fare" && m.includes("fare")) return true
-  if (fieldKey === "seats" && m.includes("seat")) return true
-  if (fieldKey === "phone" && m.includes("phone")) return true
-  if (fieldKey === "licence" && m.includes("licence")) return true
-  if (fieldKey === "registration" && m.includes("registration")) return true
+      m.includes("departure and arrival") ||
+      m.includes("departure time") ||
+      m.includes("after departure") ||
+      m.includes("later than departure")
+    )
+  }
+
+  if (fieldKey === "arrival") {
+    return (
+      m.includes("departure and arrival") ||
+      m.includes("after departure") ||
+      m.includes("later than departure") ||
+      m.includes("arrival time")
+    )
+  }
+
+  // 4. Routes
+  if (fieldKey === "origin" || fieldKey === "destination") {
+    return (
+      m.includes("origin") ||
+      m.includes("destination") ||
+      m.includes("same town")
+    )
+  }
+  if (fieldKey === "name") {
+    return m.includes("route name") || m.includes("unique")
+  }
+  if (fieldKey === "fare") {
+    return m.includes("fare")
+  }
+
+  // 5. Other entities
+  if (fieldKey === "seats") return m.includes("seat")
+  if (fieldKey === "phone") return m.includes("phone")
+  if (fieldKey === "licence") return m.includes("licence")
+  if (fieldKey === "registration") return m.includes("registration")
+
   return false
 }
 
 function getFieldHint(fieldKey: string, errMsg: string): string | null {
   if (!errMsg) return null
   const m = errMsg.toLowerCase()
+
+  // Vehicle hints (ONLY if the error is specifically about the vehicle)
   if (fieldKey === "vehicleId") {
-    if (m.includes("maintenance") || m.includes("workshop"))
+    if (m.includes("maintenance") || m.includes("workshop")) {
       return "Vehicle is booked for workshop maintenance"
-    if (m.includes("not active") || m.includes("inactive"))
+    }
+    if (m.includes("not active") || m.includes("inactive")) {
       return "Selected vehicle is currently inactive"
-    if (m.includes("already assigned") || m.includes("trip #"))
-      return "Vehicle already has an overlapping scheduled trip"
+    }
+    if (
+      m.includes("vehicle") &&
+      (m.includes("already assigned") || m.includes("overlapping"))
+    ) {
+      return "Vehicle already has another trip during this time"
+    }
+    return null
   }
-  if (
-    fieldKey === "driverId" &&
-    m.includes("driver") &&
-    (m.includes("already assigned") || m.includes("trip #"))
-  ) {
-    return "Driver already has an overlapping scheduled trip"
+
+  // Driver hints (ONLY if the error is specifically about the driver)
+  if (fieldKey === "driverId") {
+    if (
+      m.includes("driver") &&
+      (m.includes("already assigned") || m.includes("overlapping"))
+    ) {
+      return "Driver already has another trip during this time"
+    }
+    return null
   }
+
+  // Departure hints
   if (fieldKey === "departure") {
-    if (m.includes("future")) return "Must be set in the future"
-    if (m.includes("after departure") || m.includes("later than"))
-      return "Must be before arrival time"
-    if (
-      m.includes("between") ||
-      m.includes("overlapping") ||
-      m.includes("already assigned")
-    )
-      return "Time overlaps with another trip"
+    if (m.includes("future")) return "Departure must be set in the future"
+    if (m.includes("after departure") || m.includes("later than departure")) {
+      return "Departure must be before arrival"
+    }
+    return null
   }
+
+  // Arrival hints
   if (fieldKey === "arrival") {
-    if (m.includes("after departure") || m.includes("later than"))
-      return "Must be after departure time"
-    if (
-      m.includes("between") ||
-      m.includes("overlapping") ||
-      m.includes("already assigned")
-    )
-      return "Time overlaps with another trip"
+    if (m.includes("after departure") || m.includes("later than departure")) {
+      return "Arrival must be after departure time"
+    }
+    return null
   }
+
+  // Route hints
   if (
     (fieldKey === "origin" || fieldKey === "destination") &&
     m.includes("same town")
@@ -580,6 +607,7 @@ function getFieldHint(fieldKey: string, errMsg: string): string | null {
   if (fieldKey === "fare" && m.includes("fare")) {
     return "Fare must be greater than zero"
   }
+
   return null
 }
 
