@@ -14,11 +14,13 @@ import {
   IconCheck,
   IconX,
   IconStar,
+  IconUpload,
 } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { SmartSelect } from "@/components/ui/select"
 import { Card, CardContent } from "@/components/ui/card"
 import {
   Dialog,
@@ -213,7 +215,7 @@ export function DashboardClient() {
                   news.data.items.slice(0, 3).map((n) => (
                     <div className="news-item" key={n._id}>
                       <strong>{n.title}</strong>
-                      <p>{n.body}</p>
+                      <p>{n.body || n.content}</p>
                     </div>
                   ))
                 ) : (
@@ -502,27 +504,24 @@ function ManagementForm({
                 <div className="field" key={field.key}>
                   <Label htmlFor={`admin-${field.key}`}>{field.label}</Label>
                   {field.type === "select" ? (
-                    <select
+                    <SmartSelect
                       id={`admin-${field.key}`}
                       name={field.key}
                       defaultValue={value}
                       required={!field.optional}
-                    >
-                      <option value="" disabled>
-                        Choose {field.label.toLowerCase()}
-                      </option>
-                      {field.reference
-                        ? (lookup[field.reference] || []).map((row) => (
-                            <option key={String(row.id)} value={String(row.id)}>
-                              {row.label}
-                            </option>
-                          ))
-                        : field.options?.map((option) => (
-                            <option key={option} value={option}>
-                              {option.toLowerCase().replaceAll("_", " ")}
-                            </option>
-                          ))}
-                    </select>
+                      placeholder={`Choose ${field.label.toLowerCase()}`}
+                      options={
+                        field.reference
+                          ? (lookup[field.reference] || []).map((row) => ({
+                              value: String(row.id),
+                              label: String(row.label ?? row.id),
+                            }))
+                          : (field.options || []).map((option) => ({
+                              value: option,
+                              label: option.toLowerCase().replaceAll("_", " "),
+                            }))
+                      }
+                    />
                   ) : (
                     <Input
                       id={`admin-${field.key}`}
@@ -731,17 +730,18 @@ export function ReportsClient() {
         {name === "passenger-history" && (
           <div className="field">
             <Label htmlFor="report-passenger">Passenger</Label>
-            <select id="report-passenger" name="passengerId" required>
-              <option value="">Select a passenger</option>
-              {passengers.data?.rows.map((p) => (
-                <option
-                  key={String(p.passenger_id)}
-                  value={String(p.passenger_id)}
-                >
-                  {p.full_name}
-                </option>
-              ))}
-            </select>
+            <SmartSelect
+              id="report-passenger"
+              name="passengerId"
+              required
+              placeholder="Select a passenger"
+              options={
+                passengers.data?.rows.map((p) => ({
+                  value: String(p.passenger_id),
+                  label: String(p.full_name),
+                })) || []
+              }
+            />
           </div>
         )}
         <Button type="submit">
@@ -854,12 +854,18 @@ export function ContentClient() {
             <article key={item._id} className="content-card">
               <div>
                 <p className="eyebrow">
-                  {item.audience || item.assetType || item.mediaType}
+                  {item.audience ||
+                    item.category ||
+                    item.assetType ||
+                    item.documentType ||
+                    item.mediaType}
                 </p>
                 <h2>
                   {item.title || item.caption || `Vehicle ${item.vehicleId}`}
                 </h2>
-                {item.body && <p>{item.body}</p>}
+                {(item.body || item.content) && (
+                  <p>{item.body || item.content}</p>
+                )}
                 {item.fileUrl && safeMediaUrl(item.fileUrl) && (
                   <a
                     href={item.fileUrl}
@@ -875,8 +881,8 @@ export function ContentClient() {
                     ? `Vehicle ${item.vehicleId}`
                     : item.tripId
                       ? `Trip ${item.tripId}`
-                      : item.createdAt
-                        ? day(item.createdAt)
+                      : item.createdAt || item.postedDate
+                        ? day(String(item.createdAt || item.postedDate))
                         : ""}
                 </span>
               </div>
@@ -987,12 +993,59 @@ function ContentForm({
   onDone: () => void
 }) {
   const [busy, setBusy] = useState(false),
+    [uploading, setUploading] = useState(false),
+    [isDragging, setIsDragging] = useState(false),
+    [fileUrl, setFileUrl] = useState(modal.item?.fileUrl || ""),
+    [fileName, setFileName] = useState(""),
+    [mediaType, setMediaType] = useState(
+      modal.item?.mediaType || modal.item?.assetType || "IMAGE"
+    ),
+    [useUrlInput, setUseUrlInput] = useState(false),
     [error, setError] = useState("")
+
+  async function uploadFile(file: File) {
+    setUploading(true)
+    setError("")
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      const res = await fetch("/api/admin/upload", {
+        method: "POST",
+        body: formData,
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "File upload failed.")
+      setFileUrl(data.fileUrl)
+      setFileName(file.name)
+      if (collection === "trip_media" && data.fileType) {
+        setMediaType(data.fileType === "VIDEO" ? "VIDEO" : "IMAGE")
+      } else if (collection === "vehicle_assets" && data.fileType) {
+        setMediaType(data.fileType === "DOCUMENT" ? "DOCUMENT" : "IMAGE")
+      }
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    if (modal.mode !== "delete" && collection !== "announcements" && !fileUrl) {
+      setError("Please select a file to upload or enter a URL.")
+      return
+    }
     setBusy(true)
     setError("")
-    const values = Object.fromEntries(new FormData(e.currentTarget))
+    const values: Record<string, unknown> = Object.fromEntries(
+      new FormData(e.currentTarget)
+    )
+    if (fileUrl) values.fileUrl = fileUrl
+    if (collection === "vehicle_assets") values.assetType = mediaType
+    if (collection === "trip_media") values.mediaType = mediaType
+    if (collection === "announcements") {
+      values.active = values.active === "on" || values.active === "true"
+    }
     try {
       await api(
         `/api/admin/content${modal.mode === "delete" ? `/${modal.item?._id}` : ""}?collection=${collection}`,
@@ -1017,86 +1070,255 @@ function ContentForm({
               <Input
                 id="content-title"
                 name="title"
+                placeholder="e.g. Southern Expressway Schedule Update"
                 required
                 minLength={3}
                 maxLength={150}
               />
             </div>
             <div className="field">
-              <Label htmlFor="content-body">Announcement</Label>
+              <Label htmlFor="content-body">Announcement content</Label>
               <Textarea
                 id="content-body"
                 name="body"
+                placeholder="Write announcement details for passengers or operations staff..."
                 required
                 minLength={5}
                 maxLength={5000}
               />
             </div>
+            <div className="form-grid">
+              <div className="field">
+                <Label htmlFor="content-audience">Audience</Label>
+                <SmartSelect
+                  id="content-audience"
+                  name="audience"
+                  defaultValue="PASSENGERS"
+                  options={[
+                    { value: "PASSENGERS", label: "Passengers" },
+                    { value: "ALL", label: "Everyone" },
+                    { value: "ADMIN", label: "Administrators" },
+                  ]}
+                />
+              </div>
+              <div className="field">
+                <Label htmlFor="content-category">Category</Label>
+                <SmartSelect
+                  id="content-category"
+                  name="category"
+                  defaultValue="NOTICE"
+                  options={[
+                    { value: "NOTICE", label: "Notice" },
+                    { value: "SCHEDULE", label: "Schedule update" },
+                    { value: "UPDATE", label: "Service update" },
+                    { value: "ALERT", label: "General alert" },
+                  ]}
+                />
+              </div>
+            </div>
             <div className="field">
-              <Label htmlFor="content-audience">Audience</Label>
-              <select id="content-audience" name="audience">
-                <option value="PASSENGERS">Passengers</option>
-                <option value="ALL">Everyone</option>
-                <option value="ADMIN">Administrators</option>
-              </select>
+              <label className="checkbox-card">
+                <input type="checkbox" name="active" defaultChecked />
+                <div>
+                  <strong>Active status</strong>
+                  <p className="field-help" style={{ margin: "2px 0 0" }}>
+                    Show immediately on passenger updates and travel notices
+                  </p>
+                </div>
+              </label>
             </div>
           </>
         ) : (
           <>
             <div className="field">
-              <Label htmlFor="content-link">
+              <Label
+                htmlFor={
+                  collection === "vehicle_assets"
+                    ? "content-vehicle"
+                    : "content-trip"
+                }
+              >
                 {collection === "vehicle_assets" ? "Vehicle" : "Trip"}
               </Label>
               {collection === "vehicle_assets" ? (
-                <select id="content-link" name="vehicleId" required>
-                  <option value="">Select vehicle</option>
-                  {lookup.vehicles?.map((v) => (
-                    <option key={String(v.id)} value={String(v.id)}>
-                      {v.label}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <Input
-                  id="content-link"
-                  name="tripId"
-                  type="number"
-                  min={1}
+                <SmartSelect
+                  id="content-vehicle"
+                  name="vehicleId"
                   required
-                  placeholder="Trip ID from the Trips page"
+                  placeholder="Select vehicle"
+                  options={
+                    lookup.vehicles?.map((v) => ({
+                      value: String(v.id),
+                      label: String(v.label ?? v.id),
+                    })) || []
+                  }
+                />
+              ) : (
+                <SmartSelect
+                  id="content-trip"
+                  name="tripId"
+                  required
+                  placeholder="Select trip"
+                  options={
+                    lookup.trips?.map((t) => ({
+                      value: String(t.id),
+                      label: String(t.label ?? t.id),
+                    })) || []
+                  }
                 />
               )}
             </div>
             <div className="field">
               <Label htmlFor="content-type">Media type</Label>
-              <select
+              <SmartSelect
                 id="content-type"
                 name={
                   collection === "vehicle_assets" ? "assetType" : "mediaType"
                 }
-              >
-                <option value="IMAGE">Image</option>
-                <option
-                  value={collection === "vehicle_assets" ? "DOCUMENT" : "VIDEO"}
-                >
-                  {collection === "vehicle_assets" ? "Document" : "Video"}
-                </option>
-              </select>
+                value={mediaType}
+                onChange={setMediaType}
+                options={[
+                  { value: "IMAGE", label: "Image" },
+                  {
+                    value:
+                      collection === "vehicle_assets" ? "DOCUMENT" : "VIDEO",
+                    label:
+                      collection === "vehicle_assets" ? "Document" : "Video",
+                  },
+                ]}
+              />
             </div>
             <div className="field">
-              <Label htmlFor="content-url">File URL</Label>
-              <Input
-                id="content-url"
-                name="fileUrl"
-                required
-                placeholder="https://… or /uploads/…"
-                maxLength={2000}
-              />
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "0.35rem",
+                }}
+              >
+                <Label htmlFor={useUrlInput ? "content-url" : "content-file"}>
+                  {useUrlInput
+                    ? "File URL"
+                    : collection === "vehicle_assets"
+                      ? "Upload vehicle file (Image or Document)"
+                      : "Upload trip media (Image or Video)"}
+                </Label>
+                <button
+                  type="button"
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "var(--primary)",
+                    cursor: "pointer",
+                    fontSize: "0.8rem",
+                    fontWeight: 500,
+                    textDecoration: "underline",
+                  }}
+                  onClick={() => setUseUrlInput((v) => !v)}
+                >
+                  {useUrlInput
+                    ? "← Upload file directly"
+                    : "Paste URL instead →"}
+                </button>
+              </div>
+              {useUrlInput ? (
+                <Input
+                  id="content-url"
+                  name="fileUrl"
+                  value={fileUrl}
+                  onChange={(e) => setFileUrl(e.target.value)}
+                  required
+                  placeholder="https://… or /uploads/…"
+                  maxLength={2000}
+                />
+              ) : (
+                <div>
+                  <input type="hidden" name="fileUrl" value={fileUrl} />
+                  {fileUrl ? (
+                    <div className="upload-file-card">
+                      <div className="upload-file-info">
+                        <span className="upload-file-badge">{mediaType}</span>
+                        <span
+                          className="upload-file-name"
+                          title={fileName || fileUrl}
+                        >
+                          {fileName || fileUrl}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="upload-file-remove"
+                        title="Remove and choose another file"
+                        onClick={() => {
+                          setFileUrl("")
+                          setFileName("")
+                        }}
+                      >
+                        <IconTrash size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      className={`upload-dropzone ${isDragging ? "drag-active" : ""}`}
+                      onDragOver={(e) => {
+                        e.preventDefault()
+                        setIsDragging(true)
+                      }}
+                      onDragLeave={() => setIsDragging(false)}
+                      onDrop={(e) => {
+                        e.preventDefault()
+                        setIsDragging(false)
+                        const f = e.dataTransfer.files?.[0]
+                        if (f) uploadFile(f)
+                      }}
+                    >
+                      <input
+                        id="content-file"
+                        type="file"
+                        accept={
+                          collection === "vehicle_assets"
+                            ? "image/*,application/pdf"
+                            : "image/*,video/*"
+                        }
+                        onChange={(e) => {
+                          const f = e.target.files?.[0]
+                          if (f) uploadFile(f)
+                        }}
+                        disabled={uploading}
+                      />
+                      <div className="upload-dropzone-icon">
+                        <IconUpload size={22} />
+                      </div>
+                      <p className="upload-dropzone-title">
+                        {uploading
+                          ? "Uploading file…"
+                          : "Choose a file or drag & drop here"}
+                      </p>
+                      <p className="upload-dropzone-hint">
+                        {collection === "vehicle_assets"
+                          ? "PNG, JPG, WEBP images or PDF documents up to 50MB"
+                          : "PNG, JPG, WEBP images or MP4, WEBM videos up to 50MB"}
+                      </p>
+                    </div>
+                  )}
+                  {uploading && (
+                    <div className="upload-progress">
+                      <span>Uploading file…</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             {collection === "trip_media" && (
               <div className="field">
                 <Label htmlFor="content-caption">Caption</Label>
-                <Input id="content-caption" name="caption" maxLength={300} />
+                <Input
+                  id="content-caption"
+                  name="caption"
+                  placeholder="e.g. Scenic coastal road view"
+                  maxLength={300}
+                />
               </div>
             )}
           </>
@@ -1105,13 +1327,15 @@ function ContentForm({
       <Button
         type="submit"
         variant={modal.mode === "delete" ? "destructive" : "default"}
-        disabled={busy}
+        disabled={busy || uploading}
       >
         {busy
           ? "Saving…"
-          : modal.mode === "delete"
-            ? "Delete content"
-            : "Save content"}
+          : uploading
+            ? "Uploading…"
+            : modal.mode === "delete"
+              ? "Delete content"
+              : "Save content"}
       </Button>
     </form>
   )

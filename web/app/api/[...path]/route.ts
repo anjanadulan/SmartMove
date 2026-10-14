@@ -184,12 +184,22 @@ async function handle(req: NextRequest, context: Context) {
       })
       return response
     }
-    if (route === "public/announcements" && method === "GET")
-      return json({
-        items: await listContent("announcements", {
-          audience: { $in: ["PASSENGERS", "ALL"] },
-        }),
+    if (route === "public/announcements" && method === "GET") {
+      const docs = await listContent("announcements", {
+        $or: [
+          { audience: { $in: ["PASSENGERS", "ALL"] } },
+          { audience: { $exists: false } },
+        ],
       })
+      return json({
+        items: docs.map((doc) => ({
+          ...doc,
+          body: (doc.body as string) || (doc.content as string) || "",
+          audience: (doc.audience as string) || (doc.category as string) || "ALL",
+          createdAt: (doc.createdAt as string) || (doc.postedDate as string),
+        })),
+      })
+    }
     if (route === "public/routes" && method === "GET")
       return json({
         rows: await using((c) =>
@@ -411,8 +421,28 @@ async function handle(req: NextRequest, context: Context) {
             .enum(contentCollections)
             .parse(url.searchParams.get("collection"))
           const db = await mongo()
-          if (method === "GET")
-            return json({ items: await listContent(collection) })
+          if (method === "GET") {
+            const docs = await listContent(collection)
+            return json({
+              items: docs.map((doc) => ({
+                ...doc,
+                body: doc.body || doc.content,
+                audience: doc.audience || doc.category,
+                fileUrl:
+                  doc.fileUrl ||
+                  doc.url ||
+                  (doc.fileName ? `/uploads/${doc.fileName}` : undefined),
+                assetType:
+                  doc.assetType ||
+                  (doc.documentType === "PHOTO"
+                    ? "IMAGE"
+                    : doc.documentType
+                      ? "DOCUMENT"
+                      : undefined),
+                createdAt: doc.createdAt || doc.postedDate || doc.sentAt,
+              })),
+            })
+          }
           if (method === "DELETE" && path[2]) {
             const objectId = z
               .string()
@@ -428,6 +458,8 @@ async function handle(req: NextRequest, context: Context) {
               title: z.string().trim().min(3).max(150),
               body: z.string().trim().min(5).max(5000),
               audience: z.enum(["PASSENGERS", "ALL", "ADMIN"]),
+              category: z.string().optional(),
+              active: z.union([z.boolean(), z.string()]).optional(),
             })
             const asset = z.object({
               vehicleId: id.transform(String),
@@ -474,9 +506,60 @@ async function handle(req: NextRequest, context: Context) {
               if (!found.length)
                 throw new AppError("The linked record does not exist.", 404)
             }
-            const result = await db
-              .collection(collection)
-              .insertOne({ ...parsed, createdAt: new Date() })
+            const now = new Date()
+            let docToInsert: Record<string, unknown> = { ...parsed, createdAt: now }
+            if (collection === "announcements") {
+              const ann = parsed as {
+                title: string
+                body: string
+                audience: string
+                category?: string
+                active?: boolean | string
+              }
+              const isActive =
+                ann.active === undefined
+                  ? true
+                  : ann.active === true ||
+                    ann.active === "true" ||
+                    ann.active === "on"
+              docToInsert = {
+                title: ann.title,
+                body: ann.body,
+                content: ann.body,
+                audience: ann.audience,
+                category:
+                  ann.category ||
+                  (ann.audience === "ALL" ? "SCHEDULE" : "NOTICE"),
+                active: isActive,
+                createdAt: now,
+                postedDate: now,
+              }
+            } else if (collection === "vehicle_assets") {
+              const asset = parsed as {
+                vehicleId: string
+                assetType: string
+                fileUrl: string
+              }
+              docToInsert = {
+                ...asset,
+                documentType:
+                  asset.assetType === "IMAGE" ? "PHOTO" : "DOCUMENT",
+                createdAt: now,
+              }
+            } else if (collection === "trip_media") {
+              const med = parsed as {
+                tripId: string
+                mediaType: string
+                fileUrl: string
+                caption: string
+              }
+              docToInsert = {
+                ...med,
+                url: med.fileUrl,
+                createdAt: now,
+              }
+            }
+            const result = await db.collection(collection).insertOne(docToInsert)
             return json({ id: result.insertedId.toString() }, 201)
           }
         }

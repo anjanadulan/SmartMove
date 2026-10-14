@@ -65,7 +65,11 @@ export async function lookups(c: Connection) {
     c,
     `SELECT b.booking_id id, 'Booking ' || b.booking_id || ' · ' || p.full_name label FROM ${s}.bookings b JOIN ${s}.passengers p ON p.passenger_id=b.passenger_id JOIN ${s}.trips t ON t.trip_id=b.trip_id WHERE b.status='PENDING' AND b.booked_at>SYSDATE-30/1440 AND t.status='SCHEDULED' AND t.departure_at>SYSDATE ORDER BY b.booked_at DESC`
   )
-  return { routes, vehicles, drivers, pendingBookings }
+  const trips = await rows(
+    c,
+    `SELECT t.trip_id id, 'Trip ' || t.trip_id || ' · ' || r.route_name || ' (' || TO_CHAR(t.departure_at, 'YYYY-MM-DD HH24:MI') || ')' label FROM ${s}.trips t JOIN ${s}.routes r ON r.route_id=t.route_id ORDER BY t.departure_at DESC`
+  )
+  return { routes, vehicles, drivers, pendingBookings, trips }
 }
 function entityInput(entity: string, editing: boolean, body: unknown) {
   const config = Object.hasOwn(entities, entity) ? entities[entity] : undefined

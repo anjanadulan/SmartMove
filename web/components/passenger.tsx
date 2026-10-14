@@ -31,6 +31,8 @@ import {
   Status,
 } from "./common"
 import { Header, Footer } from "./shell"
+import { TownAutocomplete } from "./town-autocomplete"
+import { SmartSelect } from "@/components/ui/select"
 import type { Trip, Row, Session, ContentItem } from "@/lib/types"
 import { safeMediaUrl } from "@/lib/validation"
 
@@ -121,17 +123,14 @@ export function HomeClient({
           <form className="trip-search" onSubmit={submit}>
             <div>
               <Label htmlFor="origin">From</Label>
-              <div className="input-icon">
-                <IconMapPin />
-                <Input
-                  id="origin"
-                  list="cities"
-                  placeholder="Any departure city"
-                  value={origin}
-                  onChange={(e) => setOrigin(e.target.value)}
-                  maxLength={50}
-                />
-              </div>
+              <TownAutocomplete
+                id="origin"
+                value={origin}
+                onChange={setOrigin}
+                placeholder="Any departure city"
+                extraTowns={cities}
+                ariaLabel="Departure city"
+              />
             </div>
             <Button
               type="button"
@@ -148,17 +147,14 @@ export function HomeClient({
             </Button>
             <div>
               <Label htmlFor="destination">To</Label>
-              <div className="input-icon">
-                <IconMapPin />
-                <Input
-                  id="destination"
-                  list="cities"
-                  placeholder="Where are you going?"
-                  value={destination}
-                  onChange={(e) => setDestination(e.target.value)}
-                  maxLength={50}
-                />
-              </div>
+              <TownAutocomplete
+                id="destination"
+                value={destination}
+                onChange={setDestination}
+                placeholder="Where are you going?"
+                extraTowns={cities}
+                ariaLabel="Destination city"
+              />
             </div>
             <div>
               <Label htmlFor="departure">Departure</Label>
@@ -173,11 +169,6 @@ export function HomeClient({
             <Button type="submit" className="search-button">
               Search trips <IconArrowRight />
             </Button>
-            <datalist id="cities">
-              {cities.map((city) => (
-                <option key={city} value={city} />
-              ))}
-            </datalist>
           </form>
           {formError && <Notice>{formError}</Notice>}
           <section className="departures">
@@ -209,14 +200,16 @@ export function HomeClient({
                 >
                   Seats available
                 </Button>
-                <select
-                  aria-label="Sort departures"
+                <SmartSelect
+                  size="sm"
+                  ariaLabel="Sort departures"
                   value={sort}
-                  onChange={(e) => setSort(e.target.value)}
-                >
-                  <option value="departure">Earliest first</option>
-                  <option value="fare">Lowest fare</option>
-                </select>
+                  onChange={setSort}
+                  options={[
+                    { value: "departure", label: "Earliest first" },
+                    { value: "fare", label: "Lowest fare" },
+                  ]}
+                />
               </div>
             </div>
             {trips.loading ? (
@@ -657,11 +650,13 @@ export function UpdatesClient() {
                   {String(i + 1).padStart(2, "0")}
                 </span>
                 <div>
-                  {item.createdAt && (
-                    <p className="eyebrow">{day(item.createdAt)}</p>
+                  {(item.createdAt || item.postedDate) && (
+                    <p className="eyebrow">
+                      {day(String(item.createdAt || item.postedDate))}
+                    </p>
                   )}
                   <h2>{item.title}</h2>
-                  <p>{item.body}</p>
+                  <p>{item.body || item.content}</p>
                 </div>
               </article>
             ))}

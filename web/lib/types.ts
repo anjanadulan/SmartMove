@@ -43,6 +43,10 @@ export type ContentItem = {
   _id: string
   title?: string
   body?: string
+  content?: string
+  category?: string
+  active?: boolean
+  postedDate?: string
   comment?: string
   audience?: string
   routeId?: string
@@ -60,5 +64,9 @@ export type ContentItem = {
   message?: string
   isRead?: boolean
   createdAt?: string
+  sentAt?: string
+  url?: string
+  fileName?: string
+  documentType?: string
   reply?: { staffName: string; message: string }
 }

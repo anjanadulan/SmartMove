@@ -1,38 +1,102 @@
 {
-  "feedback_content": {
-    "feedbackId": "1",
-    "routeId": "1",
-    "vehicleId": "1",
-    "driverId": "1",
-    "vehicleRating": 4,
-    "driverRating": 5,
-    "comment": "The vehicle was clean and the driver was helpful, but arrival was late.",
-    "keywords": ["clean", "helpful", "late"],
-    "reply": {
-      "staffName": "Demo Staff",
-      "message": "Thank you for your feedback."
+  "feedback_content": [
+    {
+      "feedbackId": "1",
+      "routeId": "1",
+      "vehicleId": "1",
+      "driverId": "1",
+      "passengerName": "Kasun Perera",
+      "vehicleRating": 4,
+      "driverRating": 5,
+      "comment": "The vehicle was clean and comfortable. Driver Sunil was very polite.",
+      "keywords": ["clean", "comfortable", "polite"],
+      "published": true,
+      "reply": {
+        "staffName": "Operations Staff",
+        "message": "Thank you for your feedback."
+      }
+    },
+    {
+      "feedbackId": "2",
+      "routeId": "2",
+      "vehicleId": "2",
+      "driverId": "2",
+      "passengerName": "Nadeesha Silva",
+      "vehicleRating": 3,
+      "driverRating": 4,
+      "comment": "Departure was slightly delayed due to expressway traffic, but smooth ride.",
+      "keywords": ["delay", "traffic", "smooth"],
+      "published": true
     }
-  },
-  "vehicle_assets": {
-    "vehicleId": "1",
-    "assetType": "IMAGE",
-    "fileUrl": "/uploads/demo-vehicle.jpg"
-  },
-  "announcements": {
-    "title": "Arrive early",
-    "body": "Please arrive 15 minutes before departure.",
-    "audience": "PASSENGERS"
-  },
-  "notifications": {
-    "userId": "2",
-    "message": "Your booking 2 is confirmed.",
-    "isRead": false
-  },
-  "trip_media": {
-    "tripId": "1",
-    "uploadedBy": "1",
-    "mediaType": "IMAGE",
-    "fileUrl": "/uploads/demo-trip.jpg",
-    "caption": "Demo journey photo"
-  }
+  ],
+  "vehicle_assets": [
+    {
+      "vehicleId": "1",
+      "assetType": "IMAGE",
+      "fileUrl": "/uploads/demo-vehicle.png",
+      "registrationNumber": "WP-ND-5421",
+      "documentType": "PHOTO"
+    },
+    {
+      "vehicleId": "1",
+      "assetType": "DOCUMENT",
+      "fileUrl": "/uploads/demo-vehicle-record.pdf",
+      "registrationNumber": "WP-ND-5421",
+      "documentType": "FITNESS_CERTIFICATE",
+      "validUntil": "2027-06-30T00:00:00.000Z"
+    },
+    {
+      "vehicleId": "2",
+      "assetType": "DOCUMENT",
+      "fileUrl": "/uploads/demo-vehicle-record.pdf",
+      "registrationNumber": "WP-CAB-8812",
+      "documentType": "INSURANCE",
+      "validUntil": "2027-12-31T00:00:00.000Z"
+    }
+  ],
+  "announcements": [
+    {
+      "title": "Southern Expressway Schedule Update",
+      "body": "Expressway services between Colombo and Galle will run every 30 minutes during holidays.",
+      "content": "Expressway services between Colombo and Galle will run every 30 minutes during holidays.",
+      "audience": "ALL",
+      "category": "SCHEDULE",
+      "active": true
+    },
+    {
+      "title": "Passenger Luggage Guidelines",
+      "body": "Please ensure baggage is tagged properly before boarding.",
+      "content": "Please ensure baggage is tagged properly before boarding.",
+      "audience": "PASSENGERS",
+      "category": "NOTICE",
+      "active": true
+    },
+    {
+      "title": "Arrive early",
+      "body": "Please arrive 15 minutes before departure.",
+      "content": "Please arrive 15 minutes before departure.",
+      "audience": "PASSENGERS",
+      "category": "NOTICE",
+      "active": true
+    }
+  ],
+  "notifications": [
+    {
+      "userId": "2",
+      "bookingId": "2",
+      "message": "Your booking for Colombo - Galle trip has been confirmed.",
+      "isRead": false
+    }
+  ],
+  "trip_media": [
+    {
+      "tripId": "1",
+      "routeId": "1",
+      "uploadedBy": "1",
+      "mediaType": "IMAGE",
+      "fileUrl": "/uploads/demo-trip.png",
+      "url": "/uploads/demo-trip.png",
+      "caption": "Scenic Kadugannawa pass on Colombo - Kandy route"
+    }
+  ]
 }

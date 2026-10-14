@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { SmartSelect } from "@/components/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -394,11 +395,16 @@ function BookingModal({
           </div>
           <div className="field">
             <Label htmlFor="payment-method">Simulated payment method</Label>
-            <select id="payment-method" name="method">
-              <option value="CARD">Card (simulation)</option>
-              <option value="CASH">Cash (simulation)</option>
-              <option value="BANK_TRANSFER">Bank transfer (simulation)</option>
-            </select>
+            <SmartSelect
+              id="payment-method"
+              name="method"
+              defaultValue="CARD"
+              options={[
+                { value: "CARD", label: "Card (simulation)" },
+                { value: "CASH", label: "Cash (simulation)" },
+                { value: "BANK_TRANSFER", label: "Bank transfer (simulation)" },
+              ]}
+            />
           </div>
         </>
       )}
@@ -406,17 +412,18 @@ function BookingModal({
         <>
           <div className="field">
             <Label htmlFor="feedback-type">Feedback type</Label>
-            <select
+            <SmartSelect
               id="feedback-type"
               name="type"
               value={type}
-              onChange={(e) => setType(e.target.value)}
-            >
-              <option value="COMPLAINT">Complaint / support request</option>
-              {b.status === "CONFIRMED" && b.trip_status === "COMPLETED" && (
-                <option value="REVIEW">Review of a completed journey</option>
-              )}
-            </select>
+              onChange={setType}
+              options={[
+                { value: "COMPLAINT", label: "Complaint / support request" },
+                ...(b.status === "CONFIRMED" && b.trip_status === "COMPLETED"
+                  ? [{ value: "REVIEW", label: "Review of a completed journey" }]
+                  : []),
+              ]}
+            />
           </div>
           {type === "REVIEW" && (
             <div className="form-grid">
@@ -425,17 +432,15 @@ function BookingModal({
                   <Label htmlFor={`${label}-rating`}>
                     {label === "vehicle" ? "Vehicle rating" : "Driver rating"}
                   </Label>
-                  <select
+                  <SmartSelect
                     id={`${label}-rating`}
                     name={`${label}Rating`}
                     defaultValue="5"
-                  >
-                    {[5, 4, 3, 2, 1].map((n) => (
-                      <option key={n} value={n}>
-                        {n} / 5
-                      </option>
-                    ))}
-                  </select>
+                    options={[5, 4, 3, 2, 1].map((n) => ({
+                      value: String(n),
+                      label: `${n} / 5`,
+                    }))}
+                  />
                 </div>
               ))}
             </div>
