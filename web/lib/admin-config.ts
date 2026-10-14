@@ -1,7 +1,14 @@
 export type Field = {
   key: string
   label: string
-  type?: "text" | "number" | "date" | "datetime-local" | "select" | "textarea"
+  type?:
+    | "text"
+    | "number"
+    | "date"
+    | "datetime-local"
+    | "select"
+    | "textarea"
+    | "town"
   options?: string[]
   reference?: string
   createOnly?: boolean
@@ -94,9 +101,9 @@ export const entities: Record<string, EntityConfig> = {
     edit: true,
     remove: true,
     fields: [
+      { key: "origin", label: "Origin", type: "town", createOnly: true },
+      { key: "destination", label: "Destination", type: "town", createOnly: true },
       { key: "name", label: "Route name" },
-      { key: "origin", label: "Origin", createOnly: true },
-      { key: "destination", label: "Destination", createOnly: true },
       { key: "fare", label: "Base fare (LKR)", type: "number", min: 0.01 },
     ],
   },

@@ -137,6 +137,155 @@ export async function adminSave(
   }
   if (entity === "payments")
     return recordPayment(c, Number(input.bookingId), String(input.method))
+  if (entity === "routes") {
+    if (
+      input.origin &&
+      input.destination &&
+      String(input.origin).trim().toLowerCase() ===
+        String(input.destination).trim().toLowerCase()
+    ) {
+      throw new AppError("Origin and destination cannot be the same town.", 400)
+    }
+  }
+  if (entity === "trips") {
+    const depStr = String(input.departure)
+    const arrStr = String(input.arrival)
+    const dep = new Date(depStr)
+    const arr = new Date(arrStr)
+    if (isNaN(dep.getTime()) || isNaN(arr.getTime())) {
+      throw new AppError("Departure and arrival times are required.", 400)
+    }
+    if (arr <= dep) {
+      throw new AppError("Arrival time must be after departure time.", 400)
+    }
+    if (dep.getTime() <= Date.now()) {
+      throw new AppError("Departure time must be set in the future.", 400)
+    }
+
+    const s = schema()
+    // 1. Check vehicle status
+    const vehicleRows = await rows(
+      c,
+      `SELECT registration_number, status FROM ${s}.vehicles WHERE vehicle_id = :id`,
+      { id: input.vehicleId }
+    )
+    const veh = vehicleRows[0]
+    if (veh && veh.status !== "ACTIVE") {
+      throw new AppError(
+        `Vehicle ${veh.registration_number} is currently ${String(veh.status).toLowerCase()} and cannot be assigned to trips.`,
+        409
+      )
+    }
+
+    // 2. Check if vehicle is already assigned to an overlapping trip
+    const vOverlap = await rows(
+      c,
+      `SELECT t.trip_id, r.route_name,
+              TO_CHAR(t.departure_at, 'YYYY-MM-DD HH24:MI') dep_str,
+              TO_CHAR(t.arrival_at, 'YYYY-MM-DD HH24:MI') arr_str
+       FROM ${s}.trips t
+       JOIN ${s}.routes r ON r.route_id = t.route_id
+       WHERE t.status = 'SCHEDULED'
+         AND t.vehicle_id = :vehicleId
+         ${recordId ? "AND t.trip_id <> :recordId" : ""}
+         AND t.departure_at < TO_DATE(:arrival, 'YYYY-MM-DD"T"HH24:MI')
+         AND t.arrival_at > TO_DATE(:departure, 'YYYY-MM-DD"T"HH24:MI')`,
+      recordId
+        ? {
+            vehicleId: input.vehicleId,
+            arrival: arrStr,
+            departure: depStr,
+            recordId,
+          }
+        : {
+            vehicleId: input.vehicleId,
+            arrival: arrStr,
+            departure: depStr,
+          }
+    )
+    if (vOverlap.length > 0) {
+      const o = vOverlap[0]
+      const reg = veh?.registration_number || `ID ${input.vehicleId}`
+      throw new AppError(
+        `Vehicle ${reg} is already assigned to trip #${o.trip_id} (${o.route_name}) between ${o.dep_str} and ${o.arr_str}.`,
+        409
+      )
+    }
+
+    // 3. Check if driver is already assigned to an overlapping trip
+    const dOverlap = await rows(
+      c,
+      `SELECT t.trip_id, d.full_name, r.route_name,
+              TO_CHAR(t.departure_at, 'YYYY-MM-DD HH24:MI') dep_str,
+              TO_CHAR(t.arrival_at, 'YYYY-MM-DD HH24:MI') arr_str
+       FROM ${s}.trips t
+       JOIN ${s}.drivers d ON d.driver_id = t.driver_id
+       JOIN ${s}.routes r ON r.route_id = t.route_id
+       WHERE t.status = 'SCHEDULED'
+         AND t.driver_id = :driverId
+         ${recordId ? "AND t.trip_id <> :recordId" : ""}
+         AND t.departure_at < TO_DATE(:arrival, 'YYYY-MM-DD"T"HH24:MI')
+         AND t.arrival_at > TO_DATE(:departure, 'YYYY-MM-DD"T"HH24:MI')`,
+      recordId
+        ? {
+            driverId: input.driverId,
+            arrival: arrStr,
+            departure: depStr,
+            recordId,
+          }
+        : {
+            driverId: input.driverId,
+            arrival: arrStr,
+            departure: depStr,
+          }
+    )
+    if (dOverlap.length > 0) {
+      const o = dOverlap[0]
+      throw new AppError(
+        `Driver ${o.full_name} is already assigned to trip #${o.trip_id} (${o.route_name}) between ${o.dep_str} and ${o.arr_str}.`,
+        409
+      )
+    }
+
+    // 4. Check if vehicle has scheduled maintenance
+    const mOverlap = await rows(
+      c,
+      `SELECT maintenance_type, TO_CHAR(scheduled_date, 'YYYY-MM-DD') m_date
+       FROM ${s}.maintenance_records
+       WHERE vehicle_id = :vehicleId
+         AND status = 'SCHEDULED'
+         AND TRUNC(scheduled_date) < TO_DATE(:arrival, 'YYYY-MM-DD"T"HH24:MI')
+         AND TRUNC(scheduled_date) + 1 > TO_DATE(:departure, 'YYYY-MM-DD"T"HH24:MI')`,
+      {
+        vehicleId: input.vehicleId,
+        arrival: arrStr,
+        departure: depStr,
+      }
+    )
+    if (mOverlap.length > 0) {
+      const m = mOverlap[0]
+      const reg = veh?.registration_number || `ID ${input.vehicleId}`
+      throw new AppError(
+        `Vehicle ${reg} is scheduled for workshop maintenance on ${m.m_date} (${m.maintenance_type}).`,
+        409
+      )
+    }
+
+    // 5. If rescheduling, check for existing bookings
+    if (recordId) {
+      const bookingRows = await rows(
+        c,
+        `SELECT COUNT(*) cnt FROM ${s}.bookings WHERE trip_id = :id`,
+        { id: recordId }
+      )
+      if (bookingRows[0] && Number(bookingRows[0].cnt) > 0) {
+        throw new AppError(
+          "Cannot reschedule this trip because passengers have already booked seats on it.",
+          409
+        )
+      }
+    }
+  }
   const call = (recordId ? update : create)[entity]
   if (!call) throw new AppError("Unsupported operation.", 405)
   await c.execute(`BEGIN ${schema()}.${call}; END;`, binds)

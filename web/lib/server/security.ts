@@ -154,10 +154,28 @@ export function safeError(error: unknown) {
         .replace(/^ORA-\d+:\s*/, ""),
       status: 409,
     }
-  if ([6510, 6502, 2290].includes(e.errorNum || 0))
+  if (e.errorNum === 2290) {
+    const msg = (e.message || "").toUpperCase()
+    if (msg.includes("TRIPS_CHECK_TIMES") || msg.includes("ARRIVAL_AT > DEPARTURE_AT"))
+      return { message: "Arrival time must be after departure time.", status: 409 }
+    if (msg.includes("SEATS_POSITIVE") || msg.includes("SEAT_COUNT > 0"))
+      return { message: "Seat count must be greater than zero.", status: 409 }
+    if (msg.includes("FARE") || msg.includes("BASE_FARE"))
+      return { message: "Fare amount must be greater than zero.", status: 409 }
+    return {
+      message: "The entered value violates database check rules. Please review your inputs.",
+      status: 409,
+    }
+  }
+  if (e.errorNum === 6510)
     return {
       message:
-        "The database rejected these details. Check times, availability, and linked records.",
+        "The schedule could not be saved. The vehicle or driver is unavailable or has an overlapping trip.",
+      status: 409,
+    }
+  if (e.errorNum === 6502)
+    return {
+      message: "Invalid numeric or date value entered. Please check your inputs.",
       status: 409,
     }
   // Never expose SQL, connection details, credentials or stack traces to the browser.

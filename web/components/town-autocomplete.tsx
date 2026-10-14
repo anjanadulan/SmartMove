@@ -28,20 +28,24 @@ const POPULAR_HUBS = [
 
 export function TownAutocomplete({
   id,
+  name,
   value,
   onChange,
   placeholder,
   extraTowns = [],
   maxLength = 50,
   ariaLabel,
+  required,
 }: {
   id: string
+  name?: string
   value: string
   onChange: (value: string) => void
   placeholder?: string
   extraTowns?: string[]
   maxLength?: number
   ariaLabel?: string
+  required?: boolean
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const [highlightIndex, setHighlightIndex] = useState(-1)
@@ -127,12 +131,17 @@ export function TownAutocomplete({
   }
 
   return (
-    <div className="town-autocomplete" ref={containerRef}>
+    <div
+      className={`town-autocomplete ${isOpen ? "is-open" : ""}`}
+      ref={containerRef}
+    >
       <div className="input-icon">
         <IconMapPin size={19} />
         <Input
           ref={inputRef}
           id={id}
+          name={name}
+          required={required}
           type="text"
           autoComplete="off"
           placeholder={placeholder}

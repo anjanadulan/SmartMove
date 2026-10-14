@@ -72,8 +72,13 @@ textarea {
   margin-bottom: 7px;
 }
 [data-slot="dialog-content"] {
-  max-height: 88vh;
-  overflow-y: auto;
+  max-height: 92vh;
+  overflow: visible;
+}
+@media (max-height: 520px) {
+  [data-slot="dialog-content"] {
+    overflow-y: auto;
+  }
 }
 select {
   width: 100%;
@@ -681,6 +686,14 @@ button:focus-visible {
   position: relative;
   width: 100%;
 }
+.town-autocomplete.is-open {
+  z-index: 40;
+}
+.field:has(.town-autocomplete.is-open),
+.field:has(.town-autocomplete:focus-within) {
+  position: relative;
+  z-index: 40;
+}
 .town-suggestions {
   position: absolute;
   top: calc(100% + 6px);
@@ -690,15 +703,30 @@ button:focus-visible {
   border: 1px solid var(--border);
   border-radius: 13px;
   box-shadow: 0 16px 36px rgba(25, 37, 43, 0.12), 0 3px 8px rgba(25, 37, 43, 0.04);
-  max-height: 280px;
+  max-height: 240px;
   overflow-y: auto;
-  z-index: 100;
+  z-index: 120;
   padding: 6px;
   list-style: none;
   margin: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.town-suggestions::-webkit-scrollbar {
+  width: 5px;
+}
+.town-suggestions::-webkit-scrollbar-track {
+  background: transparent;
+}
+.town-suggestions::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 6px;
+}
+.town-suggestions::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 .town-suggestions-header {
   font-size: 11px;
@@ -712,9 +740,9 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
-  border-radius: 9px;
-  font-size: 14.5px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13.5px;
   color: var(--foreground);
   cursor: pointer;
   border: none;
@@ -723,6 +751,17 @@ button:focus-visible {
   text-align: left;
   transition: all 0.12s ease;
   user-select: none;
+}
+.town-suggestion-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: #f0f4f2;
+  color: #556c64;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 .town-suggestion-item:hover,
 .town-suggestion-item.active {
@@ -1046,6 +1085,70 @@ button:focus-visible {
 .notice.success {
   color: #255d41;
   background: #e8f4eb;
+}
+.form-error-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: #fef2f2;
+  border: 1.5px solid #f87171;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin: 14px 0 18px;
+  color: #991b1b;
+  font-size: 13.5px;
+  line-height: 1.5;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.1);
+  animation: slideInDown 0.2s ease-out;
+}
+.form-error-alert .error-icon {
+  flex-shrink: 0;
+  color: #dc2626;
+  margin-top: 1px;
+}
+.form-error-alert .error-title {
+  font-weight: 700;
+  color: #7f1d1d;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+.form-error-alert .error-body {
+  color: #991b1b;
+}
+
+/* Field validation error highlighting */
+.field.has-error label,
+.field-label-error {
+  color: #dc2626 !important;
+  font-weight: 600 !important;
+}
+.field.has-error input,
+.field.has-error textarea,
+.field.has-error .smart-select-trigger,
+.field.has-error .town-autocomplete-input,
+.field-input-error {
+  border-color: #ef4444 !important;
+  background-color: #fff8f8 !important;
+  color: #111827 !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15) !important;
+}
+.field.has-error input:focus,
+.field.has-error textarea:focus,
+.field.has-error .smart-select-trigger:focus-visible,
+.field.has-error .town-autocomplete-input:focus,
+.field-input-error:focus {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.25) !important;
+}
+.field-error-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #dc2626;
+  line-height: 1.4;
 }
 .field {
   margin-bottom: 21px;

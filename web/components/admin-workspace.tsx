@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   IconPlus,
   IconSearch,
@@ -15,6 +15,9 @@ import {
   IconX,
   IconStar,
   IconUpload,
+  IconSparkles,
+  IconRefresh,
+  IconAlertCircle,
 } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -31,6 +34,7 @@ import {
 } from "@/components/ui/dialog"
 import { api, useData, money, day, today, csvDownload } from "@/lib/client"
 import { entities, fieldAliases } from "@/lib/admin-config"
+import { TownAutocomplete } from "./town-autocomplete"
 import {
   DataTable,
   Intro,
@@ -430,6 +434,18 @@ export function ManagementClient({ entity }: { entity: string }) {
                 entity={entity}
                 modal={modal}
                 lookup={lookup.data || {}}
+                extraTowns={
+                  entity === "routes"
+                    ? Array.from(
+                        new Set(
+                          (resource.data?.rows || []).flatMap((r) => [
+                            String(r.origin || ""),
+                            String(r.destination || ""),
+                          ]).filter(Boolean)
+                        )
+                      ).sort()
+                    : []
+                }
                 onDone={done}
               />
             )
@@ -439,20 +455,172 @@ export function ManagementClient({ entity }: { entity: string }) {
     </>
   )
 }
+function AdminTownField({
+  id,
+  name,
+  value,
+  onChange,
+  placeholder,
+  required,
+  extraTowns = [],
+}: {
+  id: string
+  name: string
+  value: string
+  onChange: (val: string) => void
+  placeholder?: string
+  required?: boolean
+  extraTowns?: string[]
+}) {
+  return (
+    <TownAutocomplete
+      id={id}
+      name={name}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      extraTowns={extraTowns}
+      required={required}
+      ariaLabel={name}
+    />
+  )
+}
+
+function isFieldInvalid(fieldKey: string, errMsg: string): boolean {
+  if (!errMsg) return false
+  const m = errMsg.toLowerCase()
+  if (
+    fieldKey === "vehicleId" &&
+    (m.includes("vehicle") || m.includes("maintenance") || m.includes("workshop"))
+  )
+    return true
+  if (fieldKey === "driverId" && m.includes("driver")) return true
+  if (
+    fieldKey === "departure" &&
+    (m.includes("departure") ||
+      m.includes("future") ||
+      m.includes("arrival time must be after") ||
+      m.includes("later than") ||
+      m.includes("between") ||
+      m.includes("overlapping") ||
+      m.includes("already assigned") ||
+      m.includes("workshop"))
+  )
+    return true
+  if (
+    fieldKey === "arrival" &&
+    (m.includes("arrival") ||
+      m.includes("departure") ||
+      m.includes("between") ||
+      m.includes("overlapping") ||
+      m.includes("already assigned") ||
+      m.includes("workshop"))
+  )
+    return true
+  if (
+    (fieldKey === "origin" || fieldKey === "destination") &&
+    (m.includes("origin") || m.includes("destination") || m.includes("same town"))
+  )
+    return true
+  if (fieldKey === "name" && (m.includes("route name") || m.includes("unique")))
+    return true
+  if (fieldKey === "fare" && m.includes("fare")) return true
+  if (fieldKey === "seats" && m.includes("seat")) return true
+  if (fieldKey === "phone" && m.includes("phone")) return true
+  if (fieldKey === "licence" && m.includes("licence")) return true
+  if (fieldKey === "registration" && m.includes("registration")) return true
+  return false
+}
+
+function getFieldHint(fieldKey: string, errMsg: string): string | null {
+  if (!errMsg) return null
+  const m = errMsg.toLowerCase()
+  if (fieldKey === "vehicleId") {
+    if (m.includes("maintenance") || m.includes("workshop"))
+      return "Vehicle is booked for workshop maintenance"
+    if (m.includes("not active") || m.includes("inactive"))
+      return "Selected vehicle is currently inactive"
+    if (m.includes("already assigned") || m.includes("trip #"))
+      return "Vehicle already has an overlapping scheduled trip"
+  }
+  if (
+    fieldKey === "driverId" &&
+    m.includes("driver") &&
+    (m.includes("already assigned") || m.includes("trip #"))
+  ) {
+    return "Driver already has an overlapping scheduled trip"
+  }
+  if (fieldKey === "departure") {
+    if (m.includes("future")) return "Must be set in the future"
+    if (m.includes("after departure") || m.includes("later than"))
+      return "Must be before arrival time"
+    if (
+      m.includes("between") ||
+      m.includes("overlapping") ||
+      m.includes("already assigned")
+    )
+      return "Time overlaps with another trip"
+  }
+  if (fieldKey === "arrival") {
+    if (m.includes("after departure") || m.includes("later than"))
+      return "Must be after departure time"
+    if (
+      m.includes("between") ||
+      m.includes("overlapping") ||
+      m.includes("already assigned")
+    )
+      return "Time overlaps with another trip"
+  }
+  if (
+    (fieldKey === "origin" || fieldKey === "destination") &&
+    m.includes("same town")
+  ) {
+    return "Origin and destination must be different cities"
+  }
+  if (fieldKey === "fare" && m.includes("fare")) {
+    return "Fare must be greater than zero"
+  }
+  return null
+}
+
 function ManagementForm({
   entity,
   modal,
   lookup,
+  extraTowns = [],
   onDone,
 }: {
   entity: string
   modal: Modal
   lookup: Lookups
+  extraTowns?: string[]
   onDone: () => void
 }) {
   const config = entities[entity],
     [busy, setBusy] = useState(false),
-    [error, setError] = useState("")
+    [error, setError] = useState(""),
+    [origin, setOrigin] = useState(String(modal.row?.origin ?? "")),
+    [destination, setDestination] = useState(
+      String(modal.row?.destination ?? "")
+    ),
+    [routeName, setRouteName] = useState(
+      String(modal.row?.route_name ?? "")
+    ),
+    [autoName, setAutoName] = useState(true)
+
+  useEffect(() => {
+    if (entity === "routes" && modal.mode === "create" && autoName) {
+      if (origin && destination) {
+        setRouteName(`${origin} - ${destination}`)
+      } else if (origin) {
+        setRouteName(origin)
+      } else if (destination) {
+        setRouteName(destination)
+      } else {
+        setRouteName("")
+      }
+    }
+  }, [origin, destination, autoName, entity, modal.mode])
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setBusy(true)
@@ -484,7 +652,13 @@ function ManagementForm({
     }
   }
   return (
-    <form onSubmit={submit} className="modal-form">
+    <form
+      onSubmit={submit}
+      onChange={() => {
+        if (error) setError("")
+      }}
+      className="modal-form"
+    >
       {["create", "edit"].includes(modal.mode) && (
         <div className="form-grid">
           {config.fields
@@ -500,9 +674,81 @@ function ManagementForm({
               let value = String(modal.row?.[alias] ?? "")
               if (field.type === "datetime-local") value = value.slice(0, 16)
               if (field.type === "date") value = value.slice(0, 10)
+              const hasErr = isFieldInvalid(field.key, error)
+              const hint = getFieldHint(field.key, error)
               return (
-                <div className="field" key={field.key}>
-                  <Label htmlFor={`admin-${field.key}`}>{field.label}</Label>
+                <div
+                  className={`field ${hasErr ? "has-error" : ""}`}
+                  key={field.key}
+                >
+                  {entity === "routes" && field.key === "name" ? (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginBottom: "7px",
+                      }}
+                    >
+                      <Label
+                        htmlFor={`admin-${field.key}`}
+                        className={hasErr ? "field-label-error" : undefined}
+                        style={{ margin: 0 }}
+                      >
+                        {field.label}
+                      </Label>
+                      {autoName ? (
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            color: "var(--primary, #246348)",
+                            background: "#e9f2ec",
+                            padding: "2px 8px",
+                            borderRadius: "6px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                        >
+                          <IconSparkles size={12} /> Auto-generated
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAutoName(true)
+                            if (origin && destination)
+                              setRouteName(`${origin} - ${destination}`)
+                            else if (origin) setRouteName(origin)
+                            else if (destination) setRouteName(destination)
+                          }}
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            color: "#62747c",
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                            padding: 0,
+                          }}
+                          title="Reset to auto-generated name"
+                        >
+                          <IconRefresh size={12} /> Reset to auto
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <Label
+                      htmlFor={`admin-${field.key}`}
+                      className={hasErr ? "field-label-error" : undefined}
+                    >
+                      {field.label}
+                    </Label>
+                  )}
                   {field.type === "select" ? (
                     <SmartSelect
                       id={`admin-${field.key}`}
@@ -510,6 +756,7 @@ function ManagementForm({
                       defaultValue={value}
                       required={!field.optional}
                       placeholder={`Choose ${field.label.toLowerCase()}`}
+                      className={hasErr ? "field-input-error" : undefined}
                       options={
                         field.reference
                           ? (lookup[field.reference] || []).map((row) => ({
@@ -521,6 +768,43 @@ function ManagementForm({
                               label: option.toLowerCase().replaceAll("_", " "),
                             }))
                       }
+                    />
+                  ) : field.type === "town" ||
+                    (entity === "routes" &&
+                      (field.key === "origin" ||
+                        field.key === "destination")) ? (
+                    <AdminTownField
+                      id={`admin-${field.key}`}
+                      name={field.key}
+                      value={field.key === "origin" ? origin : destination}
+                      onChange={(val) => {
+                        if (error) setError("")
+                        if (field.key === "origin") setOrigin(val)
+                        else setDestination(val)
+                      }}
+                      required={!field.optional}
+                      placeholder={
+                        field.key === "origin"
+                          ? "Any departure city"
+                          : "Where are you going?"
+                      }
+                      extraTowns={extraTowns}
+                    />
+                  ) : entity === "routes" && field.key === "name" ? (
+                    <Input
+                      id={`admin-${field.key}`}
+                      name={field.key}
+                      type="text"
+                      value={routeName}
+                      onChange={(e) => {
+                        if (error) setError("")
+                        setRouteName(e.target.value)
+                        setAutoName(false)
+                      }}
+                      className={hasErr ? "field-input-error" : undefined}
+                      placeholder="e.g. Colombo - Kandy"
+                      required={!field.optional}
+                      maxLength={100}
                     />
                   ) : (
                     <Input
@@ -536,6 +820,7 @@ function ManagementForm({
                           : undefined
                       }
                       required={!field.optional}
+                      className={hasErr ? "field-input-error" : undefined}
                       maxLength={
                         field.key === "phone"
                           ? 15
@@ -546,6 +831,11 @@ function ManagementForm({
                               : 100
                       }
                     />
+                  )}
+                  {hint && (
+                    <span className="field-error-hint">
+                      <IconAlertCircle size={13} /> {hint}
+                    </span>
                   )}
                 </div>
               )
@@ -627,7 +917,15 @@ function ManagementForm({
           charge a card.
         </Notice>
       )}
-      {error && <Notice>{error}</Notice>}
+      {error && (
+        <div className="form-error-alert" role="alert">
+          <IconAlertCircle size={22} className="error-icon" />
+          <div>
+            <div className="error-title">Cannot Save Record</div>
+            <div className="error-body">{error}</div>
+          </div>
+        </div>
+      )}
       <Button
         type="submit"
         variant={
