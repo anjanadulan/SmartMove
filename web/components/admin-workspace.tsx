@@ -341,6 +341,19 @@ export function ManagementClient({ entity }: { entity: string }) {
                   </Button>
                 </>
               )}
+              {entity === "bookings" && row.status === "PENDING" && (
+                <Button
+                  variant="ghost"
+                  onClick={() => action(row, "confirm")}
+                  style={{
+                    color: "var(--primary, #246348)",
+                    fontWeight: 600,
+                  }}
+                >
+                  <IconCheck size={16} />
+                  Confirm & pay
+                </Button>
+              )}
               {entity === "bookings" && row.status !== "CANCELLED" && (
                 <Button variant="ghost" onClick={() => action(row, "cancel")}>
                   Cancel & refund
@@ -919,6 +932,59 @@ function ManagementForm({
               </div>
             </>
           )}
+          {modal.action === "confirm" && entity === "bookings" && (
+            <>
+              <div style={{ marginBottom: "16px", lineHeight: "1.6" }}>
+                <p style={{ margin: "0 0 10px 0" }}>
+                  Confirm booking <strong>#{modal.row?.booking_id}</strong> for{" "}
+                  <strong>{modal.row?.full_name}</strong>?
+                </p>
+                <div
+                  style={{
+                    fontSize: "13px",
+                    color: "#334155",
+                    background: "#f8fafc",
+                    padding: "10px 14px",
+                    borderRadius: "8px",
+                    border: "1px solid #e2e8f0",
+                    display: "grid",
+                    gridTemplateColumns: "repeat(2, 1fr)",
+                    gap: "6px 14px",
+                  }}
+                >
+                  <div>
+                    <strong>Route:</strong> {modal.row?.route_name}
+                  </div>
+                  <div>
+                    <strong>Seats:</strong> {modal.row?.seats}
+                  </div>
+                  <div>
+                    <strong>Departure:</strong> {modal.row?.departure_at}
+                  </div>
+                  <div>
+                    <strong>Total Fare:</strong> {modal.row?.total}
+                  </div>
+                </div>
+              </div>
+              <div className="field">
+                <Label htmlFor="method">Payment received by</Label>
+                <SmartSelect
+                  id="method"
+                  name="method"
+                  defaultValue="CASH"
+                  required
+                  options={[
+                    { value: "CASH", label: "Cash (at counter / bus)" },
+                    { value: "CARD", label: "Card (POS terminal)" },
+                    { value: "BANK_TRANSFER", label: "Bank transfer slip" },
+                  ]}
+                />
+              </div>
+              <Notice>
+                Recording payment will issue the tickets in Oracle and update this booking to CONFIRMED.
+              </Notice>
+            </>
+          )}
           {modal.action === "cancel" && (
             <Notice>
               Confirm cancellation. Paid bookings will receive refund records;
@@ -967,9 +1033,11 @@ function ManagementForm({
           ? "Saving…"
           : modal.mode === "delete"
             ? "Delete record"
-            : modal.mode === "action"
-              ? "Confirm"
-              : "Save changes"}
+            : modal.action === "confirm"
+              ? "Confirm & Issue Tickets"
+              : modal.mode === "action"
+                ? "Confirm"
+                : "Save changes"}
       </Button>
     </form>
   )

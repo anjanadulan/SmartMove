@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "check:database": "node scripts/check-database.mjs",
     "test:integration": "tsx --conditions=react-server scripts/verify-integration.ts",
-    "create:admin": "node scripts/create-admin.mjs"
+    "create:admin": "node scripts/create-admin.mjs",
+    "seed:mongo": "node scripts/seed-mongo.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

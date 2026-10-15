@@ -174,3 +174,26 @@ export async function listContent(collection: string, filter = {}) {
     .limit(100)
     .toArray() as unknown as ContentItem[]
 }
+
+export async function sendNotification({
+  userId,
+  bookingId,
+  message,
+}: {
+  userId: string | number
+  bookingId?: string | number | null
+  message: string
+}) {
+  try {
+    const db = await mongo()
+    await db.collection("notifications").insertOne({
+      userId: String(userId),
+      bookingId: bookingId ? String(bookingId) : null,
+      message,
+      isRead: false,
+      createdAt: new Date(),
+    })
+  } catch (err) {
+    console.error("Failed to insert notification:", err)
+  }
+}

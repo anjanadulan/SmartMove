@@ -253,13 +253,22 @@ async function handle(req: NextRequest, context: Context) {
         if (path[1] === "bookings" && path.length === 4) {
           const bookingId = id.parse(path[2])
           if (path[3] === "cancel" && method === "POST") {
-            const result = await cancel(c, bookingId, session.passengerId!)
-            if ((result as { changed: number })?.changed)
+            const result = (await cancel(c, bookingId, session.passengerId!)) as {
+              changed: number
+              amount: number
+            }
+            if (result?.changed) {
+              const refundAmt = Number(result.amount || 0)
+              const refundMsg =
+                refundAmt > 0
+                  ? ` A refund of LKR ${refundAmt.toLocaleString()} has been processed.`
+                  : ""
               notice = {
                 userId: String(session.userId),
                 bookingId: String(bookingId),
-                message: `Booking SM-${bookingId} has been cancelled. Check My bookings for refund details.`,
+                message: `Booking SM-${bookingId} has been cancelled.${refundMsg} Check My bookings for details.`,
               }
+            }
             return json(result)
           }
           if (path[3] === "payment" && method === "POST") {

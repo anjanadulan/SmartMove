@@ -5,7 +5,7 @@ import { rows, schema, iso, oracledb, mongo } from "./db"
 import { AppError, newId } from "./security"
 import { id, dateInput, dateTimeInput, phone } from "@/lib/validation"
 import { entities } from "@/lib/admin-config"
-import { cancel, tripSql } from "./transport"
+import { cancel, tripSql, sendNotification } from "./transport"
 
 export async function adminList(c: Connection, entity: string) {
   const s = schema()
@@ -328,6 +328,39 @@ export async function recordPayment(
     `BEGIN ${schema()}.record_payment(:id,:booking,:amount,:method); END;`,
     { id: paymentId, booking: bookingId, amount: Number(total), method }
   )
+
+  // Auto-trigger confirmation notification
+  try {
+    const s = schema()
+    const bDetails = (
+      await rows(
+        c,
+        `SELECT b.booking_id, p.user_id, r.route_name,
+                (SELECT LISTAGG(tk.seat_number, ', ') WITHIN GROUP(ORDER BY tk.seat_number)
+                 FROM ${s}.tickets tk WHERE tk.booking_id = b.booking_id) seats
+         FROM ${s}.bookings b
+         JOIN ${s}.passengers p ON p.passenger_id = b.passenger_id
+         JOIN ${s}.trips t ON t.trip_id = b.trip_id
+         JOIN ${s}.routes r ON r.route_id = t.route_id
+         WHERE b.booking_id = :id`,
+        { id: bookingId }
+      )
+    )[0]
+
+    if (bDetails?.user_id) {
+      const methodLabel = method.replace(/_/g, " ")
+      const formattedAmount = Number(total).toLocaleString()
+      const seatStr = bDetails.seats ? ` (Seat(s): ${bDetails.seats})` : ""
+      await sendNotification({
+        userId: bDetails.user_id,
+        bookingId,
+        message: `Payment of LKR ${formattedAmount} received (${methodLabel}). Booking SM-${bookingId} for ${bDetails.route_name}${seatStr} is now CONFIRMED! Have a safe journey.`,
+      })
+    }
+  } catch (err) {
+    console.error("Failed to deliver confirmation notification:", err)
+  }
+
   return { paymentId }
 }
 export async function adminAction(
@@ -339,6 +372,7 @@ export async function adminAction(
   const input = z
     .object({
       action: z.enum([
+        "confirm",
         "cancel",
         "complete",
         "refund",
@@ -346,32 +380,68 @@ export async function adminAction(
         "reopen",
         "reply",
       ]),
+      method: z.enum(["CASH", "CARD", "BANK_TRANSFER"]).optional(),
       cost: z.coerce.number().min(0).max(99999999).optional(),
       reason: z.string().trim().min(3).max(200).optional(),
       message: z.string().trim().min(2).max(2000).optional(),
     })
     .parse(body)
   const s = schema()
+  if (entity === "bookings" && input.action === "confirm") {
+    return recordPayment(c, recordId, input.method || "CASH")
+  }
   if (entity === "bookings" && input.action === "cancel") {
     const b = (
       await rows(
         c,
-        `SELECT passenger_id FROM ${s}.bookings WHERE booking_id=:id`,
+        `SELECT b.passenger_id, p.user_id, r.route_name
+         FROM ${s}.bookings b
+         JOIN ${s}.passengers p ON p.passenger_id = b.passenger_id
+         JOIN ${s}.trips t ON t.trip_id = b.trip_id
+         JOIN ${s}.routes r ON r.route_id = t.route_id
+         WHERE b.booking_id = :id`,
         { id: recordId }
       )
     )[0]
     if (!b) throw new AppError("Booking not found.", 404)
-    return cancel(c, recordId, Number(b.passenger_id))
+    const result = (await cancel(c, recordId, Number(b.passenger_id))) as {
+      changed: number
+      amount: number
+    }
+    if (result?.changed && b.user_id) {
+      const refundAmt = Number(result.amount || 0)
+      const refundMsg =
+        refundAmt > 0
+          ? ` A full refund of LKR ${refundAmt.toLocaleString()} has been processed.`
+          : ""
+      await sendNotification({
+        userId: b.user_id,
+        bookingId: recordId,
+        message: `Booking SM-${recordId} (${b.route_name}) has been cancelled by operations.${refundMsg}`,
+      })
+    }
+    return result
   }
   if (entity === "trips" && input.action === "cancel") {
     await c.execute(
       `SELECT trip_id FROM ${s}.trips WHERE trip_id=:id FOR UPDATE`,
       { id: recordId }
     )
+    const tripBookings = await rows(
+      c,
+      `SELECT b.booking_id, b.status booking_status, p.user_id, r.route_name,
+              TO_CHAR(t.departure_at, 'YYYY-MM-DD HH24:MI') dep_str
+       FROM ${s}.bookings b
+       JOIN ${s}.passengers p ON p.passenger_id = b.passenger_id
+       JOIN ${s}.trips t ON t.trip_id = b.trip_id
+       JOIN ${s}.routes r ON r.route_id = t.route_id
+       WHERE b.trip_id = :id AND b.status IN ('PENDING', 'CONFIRMED')`,
+      { id: recordId }
+    )
     await c.execute(`BEGIN ${s}.cancel_trip(:id); END;`, { id: recordId })
     const paid = await rows(
       c,
-      `SELECT p.payment_id FROM ${s}.payments p JOIN ${s}.bookings b ON b.booking_id=p.booking_id LEFT JOIN ${s}.refunds rf ON rf.payment_id=p.payment_id WHERE b.trip_id=:id AND rf.refund_id IS NULL`,
+      `SELECT p.payment_id, p.booking_id, p.amount FROM ${s}.payments p JOIN ${s}.bookings b ON b.booking_id=p.booking_id LEFT JOIN ${s}.refunds rf ON rf.payment_id=p.payment_id WHERE b.trip_id=:id AND rf.refund_id IS NULL`,
       { id: recordId }
     )
     for (const payment of paid)
@@ -380,6 +450,20 @@ export async function adminAction(
         payment: payment.payment_id,
         reason: "Operator cancelled the trip",
       })
+    for (const tb of tripBookings) {
+      if (!tb.user_id) continue
+      const wasPaid = paid.some(
+        (p) => String(p.booking_id) === String(tb.booking_id)
+      )
+      const refundNote = wasPaid
+        ? " A full refund has been automatically initiated."
+        : ""
+      await sendNotification({
+        userId: tb.user_id,
+        bookingId: tb.booking_id,
+        message: `Important: Trip #${recordId} (${tb.route_name} departing ${tb.dep_str}) has been cancelled by the operator.${refundNote} We apologize for the inconvenience.`,
+      })
+    }
     return { refundedBookings: paid.length }
   }
   if (entity === "trips" && input.action === "complete") {
@@ -396,11 +480,33 @@ export async function adminAction(
   }
   if (entity === "payments" && input.action === "refund") {
     if (!input.reason) throw new AppError("A refund reason is required.")
+    const paymentInfo = (
+      await rows(
+        c,
+        `SELECT py.payment_id, py.booking_id, py.amount, p.user_id, r.route_name
+         FROM ${s}.payments py
+         JOIN ${s}.bookings b ON b.booking_id = py.booking_id
+         JOIN ${s}.passengers p ON p.passenger_id = b.passenger_id
+         JOIN ${s}.trips t ON t.trip_id = b.trip_id
+         JOIN ${s}.routes r ON r.route_id = t.route_id
+         WHERE py.payment_id = :paymentId`,
+        { paymentId: recordId }
+      )
+    )[0]
+    if (!paymentInfo) throw new AppError("Payment record not found.", 404)
     await c.execute(`BEGIN ${s}.process_refund(:id,:payment,:reason); END;`, {
       id: newId(),
       payment: recordId,
       reason: input.reason,
     })
+    if (paymentInfo.user_id) {
+      const refundAmt = Number(paymentInfo.amount || 0).toLocaleString()
+      await sendNotification({
+        userId: paymentInfo.user_id,
+        bookingId: paymentInfo.booking_id,
+        message: `A refund of LKR ${refundAmt} has been processed for booking SM-${paymentInfo.booking_id} (${paymentInfo.route_name}). Reason: ${input.reason}.`,
+      })
+    }
     return {}
   }
   if (entity === "feedback" && ["resolve", "reopen"].includes(input.action)) {
@@ -408,16 +514,46 @@ export async function adminAction(
       id: recordId,
       status: input.action === "resolve" ? "RESOLVED" : "OPEN",
     })
+    if (input.action === "resolve") {
+      const fInfo = (
+        await rows(
+          c,
+          `SELECT f.feedback_id, f.booking_id, p.user_id, r.route_name
+           FROM ${s}.feedback_records f
+           JOIN ${s}.bookings b ON b.booking_id = f.booking_id
+           JOIN ${s}.passengers p ON p.passenger_id = b.passenger_id
+           JOIN ${s}.trips t ON t.trip_id = b.trip_id
+           JOIN ${s}.routes r ON r.route_id = t.route_id
+           WHERE f.feedback_id = :id`,
+          { id: recordId }
+        )
+      )[0]
+      if (fInfo?.user_id) {
+        await sendNotification({
+          userId: fInfo.user_id,
+          bookingId: fInfo.booking_id,
+          message: `Your feedback regarding ${fInfo.route_name} (Booking SM-${fInfo.booking_id}) has been marked as resolved by our customer care team.`,
+        })
+      }
+    }
     return {}
   }
   if (entity === "feedback" && input.action === "reply") {
     if (!input.message) throw new AppError("Enter a reply.")
-    const found = await rows(
-      c,
-      `SELECT feedback_id FROM ${s}.feedback_records WHERE feedback_id=:id`,
-      { id: recordId }
-    )
-    if (!found.length) throw new AppError("Feedback not found.", 404)
+    const found = (
+      await rows(
+        c,
+        `SELECT f.feedback_id, f.booking_id, p.user_id, r.route_name
+         FROM ${s}.feedback_records f
+         JOIN ${s}.bookings b ON b.booking_id = f.booking_id
+         JOIN ${s}.passengers p ON p.passenger_id = b.passenger_id
+         JOIN ${s}.trips t ON t.trip_id = b.trip_id
+         JOIN ${s}.routes r ON r.route_id = t.route_id
+         WHERE f.feedback_id = :id`,
+        { id: recordId }
+      )
+    )[0]
+    if (!found) throw new AppError("Feedback not found.", 404)
     const result = await (
       await mongo()
     )
@@ -432,6 +568,17 @@ export async function adminAction(
       )
     if (!result.matchedCount)
       throw new AppError("The comment content is missing.", 404)
+    if (found.user_id) {
+      const preview =
+        input.message.length > 80
+          ? input.message.slice(0, 77) + "..."
+          : input.message
+      await sendNotification({
+        userId: found.user_id,
+        bookingId: found.booking_id,
+        message: `SmartMove support replied to your feedback for ${found.route_name}: "${preview}"`,
+      })
+    }
     return {}
   }
   throw new AppError("Unsupported action.", 405)
